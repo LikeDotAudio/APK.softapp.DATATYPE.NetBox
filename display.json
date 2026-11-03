@@ -1,0 +1,9 @@
+{
+  "name": "NetBox DCIM Synch & Exporter",
+  "icon": "🌐",
+  "group": "Pipeline",
+  "subGroup": "Translators & Formats",
+  "stage": "07c",
+  "description": "NetBox DCIM Synchronizer & Exporter: synchronizes devices, interfaces, cables, and IP addresses with NetBox DCIM via REST API and exports NetBox-compliant CSV inventories.",
+  "app": "APK:Softapps/DATATYPE/DATATYPE.NetBox/index.html"
+}
