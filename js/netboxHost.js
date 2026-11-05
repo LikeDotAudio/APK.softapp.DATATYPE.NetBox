@@ -54,7 +54,7 @@ export function addDiscoveredDevice(state, thing) {
   return row;
 }
 
-/** state = { devices, cables } (mutated in place on load); onLoaded(state, meta) redraws. */
+/** state = { devices, cables } (mutated in place on load); onLoaded(state, meta, block) redraws. */
 export function connectNetboxHost(S, state, { onLoaded, notice } = {}) {
   return S.connectHost({
     editor: EDITOR,
@@ -63,7 +63,7 @@ export function connectNetboxHost(S, state, { onLoaded, notice } = {}) {
     notice,
     onLoad: (block, meta) => {
       Object.assign(state, fromBlock(block));
-      if (onLoaded) onLoaded(state, meta);
+      if (onLoaded) onLoaded(state, meta, block);
     },
     onRequest: () => ({ block: toBlock(state), meta: { filename: 'netbox_export', title: `NetBox export (${state.devices.length} devices)` } }),
   });

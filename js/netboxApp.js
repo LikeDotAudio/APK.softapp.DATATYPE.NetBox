@@ -5,7 +5,6 @@
 
 import { exportNetboxCableCsv, exportNetboxDeviceCsv } from './netbox.js';
 import { connectNetboxHost, sampleExport, toBlock, addDiscoveredDevice } from './netboxHost.js';
-import { showDiscovered, loadDiscoveredConfig } from './discoveredPanel.js';
 
 const S = window.APKSoftapp;
 const T = window.APKTable;
@@ -52,8 +51,41 @@ function render() {
   });
 }
 
+if (S) S.describe({
+  name: 'NetBox DCIM Exporter',
+  does: 'Lists devices and cables and writes them as NetBox import CSVs (devices, cables). It does not talk to NetBox itself.',
+  inputs: [
+    { name: 'Export block', from: 'the CAD (netbox_export block: devices[], cables[]); a labelled sample until one arrives', kind: 'block' },
+    { name: 'Discovered devices', from: 'the bus, via ⚡ Discovered (kinds filter from config/discovered.json)', kind: 'bus', topic: 'Device/<kind>/<id>' },
+  ],
+  outputs: [
+    { name: 'Devices CSV', to: 'netbox-devices-export.csv download (NetBox bulk import)', kind: 'file' },
+    { name: 'Cables CSV', to: 'netbox-cables-export.csv download (NetBox bulk import)', kind: 'file' },
+    { name: 'Export block', to: 'the CAD drawing (Save & Return), or netbox_export.json download when standalone', kind: 'block' },
+  ],
+  controls: [
+    { name: '➕ Device / ➕ Cable', how: 'Adds a row; edit cells in the tables, delete a row with its ✕' },
+    { name: '⚡ Discovered', how: 'Shows what the bus knows; Add device copies one in as a row (by MAC / serial)' },
+    { name: 'Export Devices CSV / Export Cables CSV', how: 'Downloads the CSV shown on the right' },
+    { name: 'Save & Return', how: 'Sends the block back to the CAD (or downloads it as .json)' },
+  ],
+  problems: ['bad_input', 'config_invalid', 'save_failed', 'sdk_missing'],
+});
+
+/* A block that is not a NetBox export loads as empty — say which field was missing. */
+function checkBlock(block, meta) {
+  const b = block && typeof block === 'object' ? block : null;
+  const missing = ['devices', 'cables'].filter((k) => !b || !Array.isArray(b[k]));
+  if (!missing.length || !S) return;
+  S.showProblem('bad_input', {
+    subject: (meta && (meta.blockName || meta.title)) || 'CAD block',
+    detail: `The block has no ${missing.map((k) => `${k}[]`).join(' or ')} field${missing.length > 1 ? 's' : ''}, so ${missing.join(' and ')} loaded empty.`,
+    fix: ['Open this from a NetBox export (netbox_export) block in the CAD, not another block type.'],
+  });
+}
+
 const host = S ? connectNetboxHost(S, state, {
-  onLoaded: (st, meta) => { $('block-tag').textContent = meta.blockName || meta.title || 'FROM THE CAD'; render(); },
+  onLoaded: (st, meta, block) => { $('block-tag').textContent = meta.blockName || meta.title || 'FROM THE CAD'; render(); checkBlock(block, meta); },
 }) : null;
 
 function changed() {
@@ -62,6 +94,11 @@ function changed() {
 }
 
 function download(text, name) {
+  if (text.split('\n').filter((l) => l.trim()).length < 2) {
+    // header only: NetBox would import nothing
+    if (S) S.showProblem('bad_input', { subject: name, detail: 'The table is empty, so the CSV is a header with no rows.', fix: ['Add a row first (➕ Device / ➕ Cable, or ⚡ Discovered → Add device).'] });
+    return;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
   a.download = name;
@@ -75,7 +112,10 @@ $('btn-add-device').addEventListener('click', () => { state.devices.push({ name:
 $('btn-add-cable').addEventListener('click', () => { state.cables.push({ fromDevice: '', fromPort: '', toDevice: '', toPort: '', label: '' }); changed(); });
 
 $('btn-save').addEventListener('click', () => {
-  const how = host ? host.save(toBlock(state), { filename: 'netbox_export' }) : '';
+  let how = '';
+  try { how = host ? host.save(toBlock(state), { filename: 'netbox_export' }) : ''; }
+  catch (e) { S.showProblem('save_failed', { subject: 'netbox_export', detail: e && e.message ? e.message : String(e), onRetry: () => $('btn-save').click() }); return; }
+  if (!host) $('block-tag').textContent = 'NOT SAVED: SHARED CODE MISSING';
   if (how) $('block-tag').textContent = how === 'host' ? 'SAVED TO THE CAD' : 'DOWNLOADED .JSON';
 });
 
@@ -84,15 +124,19 @@ $('btn-discovered').addEventListener('click', async () => {
   panel.hidden = !panel.hidden;
   if (panel.hidden || panel.dataset.started) return;
   panel.dataset.started = '1';
-  const cfg = await loadDiscoveredConfig();
-  await showDiscovered($('discovered-table'), {
-    S, T, statusEl: $('discovered-status'),
-    kinds: Array.isArray(cfg.kinds) ? cfg.kinds : [],
-    tableId: 'netbox-discovered',
+  // the Discovered panel is the shared client's (ROAD-3502): kinds in config/discovered.json
+  if (!window.APKSoftapp) return;
+  await window.APKSoftapp.discoveredPanel($('discovered-table'), {
+    status: $('discovered-status'),
+    configUrl: './config/discovered.json',
+    id: 'netbox-discovered',
     pickLabel: 'Add device',
     onPick: (thing) => { if (addDiscoveredDevice(state, thing)) changed(); },
   });
 });
 
-if (!T) $('devices-table').textContent = 'vendor/apk-table did not load.';
+if (!T) {
+  if (S) S.showProblem('sdk_missing', { into: $('devices-table'), detail: 'vendor/apk-table/apk-table.js did not load, so the tables cannot draw.', dismissable: false });
+  else $('devices-table').textContent = 'vendor/apk-table and vendor/apk-softapp did not load: reload (Ctrl+Shift+R), or re-vendor them with .apk.scripts/vendor_shared_web.py.';
+}
 render();
