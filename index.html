@@ -3,49 +3,62 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NetBox DCIM Synchronizer & Exporter — APK.audio</title>
+  <title>NetBox DCIM Synchronizer &amp; Exporter — APK.audio</title>
+  <link rel="stylesheet" href="./vendor/apk-contracts/apk-tokens.css">
+  <link rel="stylesheet" href="./vendor/apk-table/apk-table.css">
   <style>
     body { font-family: -apple-system, sans-serif; background: #0f1218; color: #e2e8f0; margin: 0; padding: 20px; }
-    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #283348; padding-bottom: 15px; margin-bottom: 20px; }
-    textarea { width: 100%; height: 260px; background: #181d28; color: #34d399; font-family: monospace; font-size: 13px; border: 1px solid #2c364a; border-radius: 6px; padding: 12px; margin-bottom: 16px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid #283348; padding-bottom: 15px; margin-bottom: 20px; }
+    header h2 { margin: 0; }
+    .pill { font-size: 11px; color: var(--apk-accent); border: 1px solid #283348; border-radius: 10px; padding: 2px 8px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    h4 { color: #94a3b8; margin: 16px 0 8px; display: flex; justify-content: space-between; align-items: center; }
+    textarea { width: 100%; box-sizing: border-box; height: 200px; background: #181d28; color: #34d399; font-family: monospace; font-size: 13px; border: 1px solid #2c364a; border-radius: 6px; padding: 12px; }
     button { background: #0284c7; color: #fff; border: 1px solid #38bdf8; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
+    button.small { padding: 3px 10px; font-size: 12px; }
+    button.primary { background: var(--apk-accent); color: var(--apk-on-accent, #111); border-color: var(--apk-accent); }
+    .discovered-panel { border: 1px solid #283348; border-radius: 6px; padding: 8px 12px; margin-bottom: 16px; max-height: 40vh; overflow: auto; }
+    .discovered-status { font-size: 12px; margin-bottom: 6px; }
   </style>
 </head>
 <body>
   <header>
-    <h2>🌐 NetBox DCIM Synch & Exporter</h2>
-    <button id="btn-dl">Export Cables CSV</button>
+    <h2>🌐 NetBox DCIM Synch &amp; Exporter</h2>
+    <span class="pill" id="block-tag">SAMPLE EXPORT</span>
+    <div>
+      <button id="btn-discovered">⚡ Discovered</button>
+      <button id="btn-dl-devices">Export Devices CSV</button>
+      <button id="btn-dl">Export Cables CSV</button>
+      <button id="btn-save" class="primary">💾 Save &amp; Return</button>
+    </div>
   </header>
 
-  <h4 style="color:#94a3b8;">NetBox Cables CSV Export:</h4>
-  <textarea id="cable-csv" spellcheck="false"></textarea>
+  <section class="discovered-panel" id="discovered-panel" hidden>
+    <div class="discovered-status apk-state-text" id="discovered-status" data-apk-state="kinda">Not asked yet.</div>
+    <div id="discovered-table" class="apk-table-host"></div>
+  </section>
 
-  <h4 style="color:#94a3b8;">NetBox Devices CSV Export:</h4>
-  <textarea id="device-csv" spellcheck="false"></textarea>
+  <div class="grid">
+    <section>
+      <h4>Devices <button class="small" id="btn-add-device">➕ Device</button></h4>
+      <div id="devices-table" class="apk-table-host"></div>
+      <h4>Cables <button class="small" id="btn-add-cable">➕ Cable</button></h4>
+      <div id="cables-table" class="apk-table-host"></div>
+    </section>
+    <section>
+      <h4>NetBox Devices CSV</h4>
+      <textarea id="device-csv" spellcheck="false" readonly></textarea>
+      <h4>NetBox Cables CSV</h4>
+      <textarea id="cable-csv" spellcheck="false" readonly></textarea>
+    </section>
+  </div>
 
-  <script type="module">
-    import { exportNetboxCableCsv, exportNetboxDeviceCsv } from './js/netbox.js';
-
-    const devices = [
-      { name: 'CORE-DSP-01', deviceType: 'Audio DSP', role: 'Processor', site: 'Studio A', rack: 'RACK-01', position: 10 },
-      { name: 'SW-CORE-01', deviceType: 'Cisco CBS350', role: 'Switch', site: 'Studio A', rack: 'RACK-01', position: 22 }
-    ];
-
-    const cables = [
-      { fromDevice: 'CORE-DSP-01', fromPort: 'Dante Pri', toDevice: 'SW-CORE-01', toPort: 'ge-0/0/1', label: 'C-DANTE-01' },
-      { fromDevice: 'CORE-DSP-01', fromPort: 'Dante Sec', toDevice: 'SW-CORE-01', toPort: 'ge-0/0/2', label: 'C-DANTE-02' }
-    ];
-
-    document.getElementById('cable-csv').value = exportNetboxCableCsv(cables);
-    document.getElementById('device-csv').value = exportNetboxDeviceCsv(devices);
-
-    document.getElementById('btn-dl').addEventListener('click', () => {
-      const blob = new Blob([document.getElementById('cable-csv').value], { type: 'text/csv' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'netbox-cables-export.csv';
-      a.click();
-    });
-  </script>
+  <!-- The one softapp client (ROAD-3485): contracts, bus, CAD bridge, table. Classic scripts, before the module. -->
+  <script src="./vendor/apk-contracts/apk-contracts.global.js"></script>
+  <script src="/FrontEnd/shared/apk-bus.js"></script>
+  <script src="./vendor/apk-softapp/apk-softapp.js"></script>
+  <script src="./vendor/apk-table/apk-table.js"></script>
+  <script type="module" src="./js/netboxApp.js"></script>
 </body>
 </html>
