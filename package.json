@@ -1,6 +1,6 @@
 {
   "name": "datatype-netbox",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "NetBox DCIM Synchronizer & Exporter on APK.audio",
   "type": "module",
   "scripts": {
