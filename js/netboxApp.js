@@ -4,7 +4,8 @@
    beside them, discovered devices off the bus, the block in and out of the CAD. */
 
 import { exportNetboxCableCsv, exportNetboxDeviceCsv } from './netbox.js';
-import { connectNetboxHost, sampleExport, toBlock, addDiscoveredDevice } from './netboxHost.js';
+import { connectNetboxHost, sampleExport, toBlock, fromBlock, addDiscoveredDevice } from './netboxHost.js';
+import { netboxToIfc, netboxFromIfc, schemaOf } from './netboxIfc.js';
 
 const S = window.APKSoftapp;
 const T = window.APKTable;
@@ -57,19 +58,22 @@ if (S) S.describe({
   inputs: [
     { name: 'Export block', from: 'the CAD (netbox_export block: devices[], cables[]); a labelled sample until one arrives', kind: 'block' },
     { name: 'Discovered devices', from: 'the bus, via ⚡ Discovered (kinds filter from config/discovered.json)', kind: 'bus', topic: 'Device/<kind>/<id>' },
+    { name: 'Export file', from: '📂 Open: a netbox_export .json, or its .ifc twin', kind: 'file' },
   ],
   outputs: [
     { name: 'Devices CSV', to: 'netbox-devices-export.csv download (NetBox bulk import)', kind: 'file' },
     { name: 'Cables CSV', to: 'netbox-cables-export.csv download (NetBox bulk import)', kind: 'file' },
-    { name: 'Export block', to: 'the CAD drawing (Save & Return), or netbox_export.json download when standalone', kind: 'block' },
+    { name: 'Export block', to: 'the CAD drawing (Save & Return); standalone, netbox_export.json beside its .ifc twin (Save Model)', kind: 'block' },
+    { name: 'IFC twin', to: 'netbox_export.ifc (IFC4X3_ADD2) with the .json when standalone: sites, racks (IfcElementAssembly), devices as occurrences, each cable an IfcCableSegment between DATA ports', kind: 'file' },
   ],
   controls: [
     { name: '➕ Device / ➕ Cable', how: 'Adds a row; edit cells in the tables, delete a row with its ✕' },
     { name: '⚡ Discovered', how: 'Shows what the bus knows; Add device copies one in as a row (by MAC / serial)' },
     { name: 'Export Devices CSV / Export Cables CSV', how: 'Downloads the CSV shown on the right' },
-    { name: 'Save & Return', how: 'Sends the block back to the CAD (or downloads it as .json)' },
+    { name: '📂 Open', how: 'Loads a netbox_export .json or its .ifc twin' },
+    { name: 'Save & Return', how: 'Sends the block back to the CAD; standalone, writes the .json and its .ifc twin, both or neither' },
   ],
-  problems: ['bad_input', 'config_invalid', 'save_failed', 'sdk_missing'],
+  problems: ['bad_input', 'bad_json', 'file_unreadable', 'config_invalid', 'save_failed', 'sdk_missing'],
 });
 
 /* A block that is not a NetBox export loads as empty — say which field was missing. */
@@ -111,12 +115,36 @@ $('btn-dl-devices').addEventListener('click', () => download($('device-csv').val
 $('btn-add-device').addEventListener('click', () => { state.devices.push({ name: `DEVICE-${state.devices.length + 1}`, deviceType: '', role: '', site: '', rack: '', position: '', status: 'Active', serial: '' }); changed(); });
 $('btn-add-cable').addEventListener('click', () => { state.cables.push({ fromDevice: '', fromPort: '', toDevice: '', toPort: '', label: '' }); changed(); });
 
-$('btn-save').addEventListener('click', () => {
+$('btn-save').addEventListener('click', async () => {
   let how = '';
+  if (host && !host.embedded && typeof S.saveModel === 'function') {
+    // standalone: Save Model — the .json and its .ifc twin, both or neither
+    const r = await S.saveModel(toBlock(state), { name: 'netbox_export', toIfc: (b) => netboxToIfc(b, { name: 'netbox_export' }) });
+    if (!r.ok) { if (!r.cancelled) S.showProblem(r.problem || 'save_failed', { onRetry: () => $('btn-save').click() }); return; }
+    $('block-tag').textContent = r.via === 'directory' ? 'SAVED .JSON + .IFC' : 'DOWNLOADED .JSON + .IFC';
+    return;
+  }
   try { how = host ? host.save(toBlock(state), { filename: 'netbox_export' }) : ''; }
   catch (e) { S.showProblem('save_failed', { subject: 'netbox_export', detail: e && e.message ? e.message : String(e), onRetry: () => $('btn-save').click() }); return; }
   if (!host) $('block-tag').textContent = 'NOT SAVED: SHARED CODE MISSING';
   if (how) $('block-tag').textContent = how === 'host' ? 'SAVED TO THE CAD' : 'DOWNLOADED .JSON';
+});
+
+// 📂 Open: a netbox_export .json, or an .ifc (its devices and cables, netboxIfc.js)
+$('btn-open')?.addEventListener('click', async () => {
+  if (!S) return;
+  const r = await S.openModel({
+    fromIfc: (text) => netboxFromIfc(text),
+    fromJson: (b) => {
+      const missing = ['devices', 'cables'].filter((k) => !b || !Array.isArray(b[k]));
+      if (missing.length) throw new Error(`The file has no ${missing.map((k) => `${k}[]`).join(' or ')}: it is not a NetBox export.`);
+      return b;
+    },
+  });
+  if (!r.ok) { if (!r.cancelled) S.showProblem(r.problem, { onRetry: () => $('btn-open').click(), fix: ['Open a netbox_export .json saved here, or its .ifc twin.'] }); return; }
+  Object.assign(state, fromBlock(r.model));
+  $('block-tag').textContent = r.kind === 'ifc' ? `${r.name} · ${schemaOf(r.text)}` : r.name;
+  changed();
 });
 
 $('btn-discovered').addEventListener('click', async () => {
